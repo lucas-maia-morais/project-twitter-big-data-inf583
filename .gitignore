@@ -17,3 +17,6 @@ target/
 
 # visual studio
 .vscode
+
+# huge folder with sample data
+data/
