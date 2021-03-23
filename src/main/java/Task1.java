@@ -1,9 +1,10 @@
 import org.apache.spark.sql.*;
 import org.apache.spark.sql.types.TimestampType;
+import scala.tools.nsc.typechecker.PatternMatching;
 
 import java.sql.Timestamp;
 
-import static org.apache.spark.sql.functions.col;
+import static org.apache.spark.sql.functions.*;
 
 public class Task1 {
 
@@ -16,6 +17,23 @@ public class Task1 {
 
         // read file with sample tweets
         Dataset <Row> tweets = spark.read().json(fileName);
+
+        Dataset <Row> texts = tweets.withColumn("date", from_unixtime(unix_timestamp(col("created_at"), "EEE MMM d HH:mm:ss z yyyy")))
+                .filter(col("date").gt(timestamp1))
+                .filter(col("date").lt(timestamp2))
+                .select(col("text"), col("date"));
+
+        texts.show(6);
+
+        Dataset<Row> tweetsWords = texts.withColumn("words", functions.split(texts.col("text"), " "));
+        tweetsWords.show(5);
+
+        Dataset<Row> words = tweetsWords.withColumn("words_separated", functions.explode(tweetsWords.col("words"))).select(col("words_separated"), col("date"));
+        words.show(5);
+
+        Dataset<Row> counts = words.groupBy("words_separated").count().orderBy(col("count").desc());
+        counts.show(false);
+
 
         // NAO FUNFA 100%
 //        Dataset <Row> filtered = tweets.filter(col("created_at").cast("timestamp").$greater(timestamp1));
@@ -33,8 +51,8 @@ public class Task1 {
 
     public static void main(String[] args) throws AnalysisException {
         spark = SparkSession.builder().appName("Java Spark SQL for Twitter").config("spark.master", "local[*]").getOrCreate();
-        countWords("Fri Jan 31 16:00:00 +0000 2020", "Fri Jan 31 23:00:00 +0000 2020",
-                "data/French/2020-02-01/2020-02-01");
+        countWords("2020-02-01 00:00:00", "2020-02-01 12:00:00",
+                "data/French/2020-02-01");
     }
 
 }
