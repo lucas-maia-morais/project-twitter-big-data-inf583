@@ -30,11 +30,13 @@ public class Task1_2 {
 
         texts.show(6);
 
-        Dataset<Row> tweetsWords = texts.withColumn("words", split(lower(texts.col("text")), " "));
+        Dataset<Row> tweetsWords = texts.withColumn("words", split(lower(texts.col("text")), "[\\s,;.:?!'’\"/\\\\]"));
         tweetsWords.show(5);
 
 
-        Dataset<Row> words = tweetsWords.withColumn("words_separated", explode(tweetsWords.col("words"))).select(col("words_separated"), col("date"));
+        Dataset<Row> words = tweetsWords.withColumn("words_separated", explode(tweetsWords.col("words")))
+                .select(col("words_separated"), col("date"))
+                .filter(col("words_separated").notEqual("")); // remove empty strings
         words.show(5);
 
         Dataset<Row> counts = words.groupBy("words_separated").count().orderBy(col("count").desc());
@@ -72,17 +74,17 @@ public class Task1_2 {
     public static void main(String[] args) throws AnalysisException {
         spark = SparkSession.builder().appName("Java Spark  SQL for Twitter")
                 .config("spark.master", "local[*]")
-                .config("spark.sql.autoBroadcastJoinThreshold", "-1")
+                // .config("spark.sql.autoBroadcastJoinThreshold", "-1")
                 .getOrCreate();
 
         // create sql context
         SQLContext sqlContext = new SQLContext(spark);
-        sqlContext.setConf("spark.sql.autoBroadcastJoinThreshold", "-1");
-        sqlContext.setConf("spark.sql.broadcastTimeout",  "36000");
+        // sqlContext.setConf("spark.sql.autoBroadcastJoinThreshold", "-1");
+        // sqlContext.setConf("spark.sql.broadcastTimeout",  "36000");
         sqlContext.setConf("spark.executor.memory",  "6g");
 
 
-        countWords("2020-02-01 00:00:00", "2020-02-02 00:00:00",
+        countWords("2020-02-01 00:00:00", "2020-02-01 06:00:00",
                 "data/French/2020-02-01", "data/French/stop_words.txt");
     }
 
