@@ -39,30 +39,51 @@ public class Task4 {
 
         SparkConf sparkConf = new SparkConf().setMaster("local[*]").setAppName("Task4");
 
-        int batchInterval = 30;
+        int batchInterval = 120;
+        int n = 5; // number of batches per window (increases the confidence of our estimation of Poisson coefficient)
         JavaStreamingContext jssc = new JavaStreamingContext(sparkConf, Durations.seconds(batchInterval));
         JavaReceiverInputDStream <Status> stream = TwitterUtils.createStream(jssc);
 
         JavaDStream <String> txtTweets = stream.map(s ->s.getText().replace('\n', ' '));
         JavaDStream<String> wordsTweets = txtTweets.flatMap(x -> Arrays.asList(x.split(" ")).iterator());
 
-        //////                                                                      ///////
-        // recover current and last DStreams order to apply Point-by-point Poisson Model://
-        //////                                                                      ///////
+        ///////////////////////////////////////////////////////////
+        // recover word count of current and last (n-1) DStreams //
+        ///////////////////////////////////////////////////////////
 
         JavaPairDStream <String, Integer> countCurrent = wordsTweets.mapToPair(s -> new Tuple2<>(s,1))
                 .reduceByKey(Integer::sum);
         JavaPairDStream <String, Integer> countWindow = wordsTweets.mapToPair(s -> new Tuple2<>(s,1))
-                .reduceByKeyAndWindow(Integer::sum, Durations.seconds(2*batchInterval), Durations.seconds(batchInterval));
-        // Our idea to retrieve the word count for the last batch before the current one:
+                .reduceByKeyAndWindow(Integer::sum, Durations.seconds(n*batchInterval), Durations.seconds(batchInterval));
+        // Our idea to retrieve the word count for the last (n-1) batches before the current one:
         // since the maximum(count in window, count in current batch) = count in window,
         // and minimum(count in window, count in current batch) = count in current batch,
-        // so we have count in last batch = max - min
-        JavaPairDStream <String, Integer> countLastBatch = countWindow.union(countCurrent)
+        // so we have count in last batches = max - min
+        JavaPairDStream <String, Integer> countLastBatches = countWindow.union(countCurrent)
                 .reduceByKey((a,b) -> Math.max(a,b)-Math.min(a,b));
+        JavaPairDStream <String, Double> avgCountLastBatches = countLastBatches
+                .mapToPair(x -> new Tuple2<>(x._1, (double) x._2/(n-1)));
 
         // check if the idea was correctly implemented
         // countLastBatch.filter(x -> x._2 > 0).print();
+
+        /////////////////////////////////////
+        // Apply event detection algorithm //
+        /////////////////////////////////////
+
+        // set parameter for the detection of anomalies with Poisson model
+        int eta = 2;
+        double alpha = 0.95;
+        JavaPairDStream<String, Tuple2<Integer,Double>> joined = countCurrent.join(avgCountLastBatches);
+        ///// debug and param settings - visualize threshold
+        // joined.mapToPair(t ->
+        //         new Tuple2<>(t._1, new Tuple2<>(t._2._1, eta * Utils.CI(t._2._2, n-1, alpha) + t._2._2)))
+        //        .print();
+        /////
+        JavaPairDStream<String, Integer> events = joined.filter(t -> t._2._1 > eta * Utils.CI(t._2._2, n-1, alpha) + t._2._2)
+                .mapToPair(t -> new Tuple2<>(t._1,t._2._1));
+        events.print();
+
 
         jssc.start();
         try {
