@@ -75,8 +75,10 @@ public class Task4 {
             eventWords.saveAsTextFiles("target/our_outputs/event_detection",
                     LocalDateTime.now().toString().replaceAll("[:.]","-"));
         }
-        else
-        events.print();
+        else {
+            System.out.println("Ignore the first " + (n-1) + " outputs");
+            events.print();
+        }
 
     }
 
@@ -165,6 +167,7 @@ public class Task4 {
                         .toLowerCase(Locale.ROOT)
                         .replaceAll(urlRegex + "|" + commonUrlRegex, "")
                         .replaceAll(unicodeCharsRegex, "")
+                        .replaceAll("https|co|rt","") // despite our efforts, there are always these 3 words
                         .split("[\\s\\n,;.:?!'’\"{}\\[\\]()/\\\\]"))
                         .filter(w -> !w.equals("")) // remove empty strings
                         .filter(w -> !stopWords.contains(w)) // removes stop words
