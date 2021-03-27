@@ -3,8 +3,6 @@ import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 import org.apache.spark.sql.*;
 
-import javax.xml.crypto.Data;
-
 import java.util.Arrays;
 import java.util.List;
 
@@ -48,7 +46,7 @@ public class Task123 {
         return new Pair<Dataset<Row>, Dataset<Row>>(counts, countsWithoutStopWords);
     }
 
-    public static Dataset<Row> get_word_historic_in_a_day(String day) throws AnalysisException {
+    public static Dataset<Row> getWordHistoricInADay(String day) throws AnalysisException {
         Pair <Dataset<Row>, Dataset<Row>> count_words;
         Dataset<Row> words_historic;
         List<String> time_period = Arrays.asList( "night", "morning", "afternoon", "evening");
@@ -86,7 +84,7 @@ public class Task123 {
 
     }
 
-    public static Dataset<Row> get_deviation (Dataset<Row> historic, String[] periods){
+    public static Dataset<Row> getDeviation(Dataset<Row> historic, String[] periods){
         String[] columns = historic.columns();
         for (int i=1; i<columns.length-1; i++){
             historic = historic.withColumn("deviation-"+periods[i-1] , round(col(columns[i]).minus(col("mean")).divide(col("mean")).multiply(100)))
@@ -97,7 +95,7 @@ public class Task123 {
         return historic;
     }
 
-    public static void identify_season_words(Dataset<Row> deviation, double threshold){
+    public static void identifySeasonWords(Dataset<Row> deviation, double threshold){
         String[] columns = deviation.columns();
         Dataset<Row> words_gt = deviation.filter(col(columns[1]).gt(threshold)
                                                  .or(col(columns[2]).gt(threshold))
@@ -129,8 +127,8 @@ public class Task123 {
         Dataset<Row> deviation = spark.emptyDataFrame();
 
         for (int day = 1; day<8; day++) {
-            historic = get_word_historic_in_a_day("2020-02-0"+ String.valueOf(day));
-            deviation = get_deviation(historic, time_period);
+            historic = getWordHistoricInADay("2020-02-0"+ String.valueOf(day));
+            deviation = getDeviation(historic, time_period);
 
             String[] columns = deviation.columns();
             if(day == 1)
@@ -163,7 +161,7 @@ public class Task123 {
         System.out.println("Finished select");
         //mean_of_deviations.show(200);
 
-        identify_season_words(mean_of_deviations, 20);
+        identifySeasonWords(mean_of_deviations, 20);
 
     }
 
