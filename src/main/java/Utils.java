@@ -15,6 +15,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.regex.Pattern;
 
 public class Utils {
 
@@ -118,5 +119,31 @@ public class Utils {
             stopWords.add(line);
         }
         return stopWords;
+    }
+
+    public static JavaDStream<String> preprocessing(JavaDStream<String> txtTweets, HashSet<String> stopWords) {
+        // identifies numbers (to be applied ** after ** split into different words)
+        Pattern pattern = Pattern.compile("-?\\d+(\\.\\d+)?");
+        // regex for unicode characters
+        String unicodeCharsRegex = "\\\\u\\w\\w\\w\\w";
+        // regex to map URLs adapted from https://stackoverflow.com/a/3809435 but taking into account that Twitter texts
+        // already scape slashes like "\/" (so we want to map both / and (\/) as /:
+        String urlRegex = "(http(s)?:(//|\\\\/\\\\/).)?(www\\.)?[-a-zA-Z0-9@:%._+~#=]{2,256}\\.[a-z]{2,6}\\b([-a-zA-Z0-9@:%_+.~#?&/\\\\=]*)";
+        // there is also a very specific and common url in the tweets data files that is not catch by the prev regex
+        String commonUrlRegex = "(https:\\\\/\\\\/t\\.co\\\\/[-a-zA-Z0-9@:%._+~#=]{1,256})";
+        // Finally, split into words and application of filters:
+        JavaDStream<String> wordsTweets = txtTweets
+                .flatMap(s -> Arrays.stream(s
+                        .toLowerCase(Locale.ROOT)
+                        .replaceAll(urlRegex + "|" + commonUrlRegex, "")
+                        .replaceAll(unicodeCharsRegex, "")
+                        .replaceAll("https|co|rt","") // despite our efforts, there are always these 3 words
+                        .split("[\\s\\n,;.:?!'’\"{}\\[\\]()/\\\\]"))
+                        .filter(w -> !w.equals("")) // remove empty strings
+                        .filter(w -> !stopWords.contains(w)) // removes stop words
+                        .iterator()) // split and flat
+                .filter(s -> !pattern.matcher(s).matches()); // remove number-format words
+
+        return wordsTweets;
     }
 }

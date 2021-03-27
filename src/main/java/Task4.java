@@ -13,7 +13,13 @@ import scala.Tuple3;
 import twitter4j.Status;
 
 import java.io.IOException;
+import java.io.File;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Locale;
@@ -82,6 +88,86 @@ public class Task4 {
 
     }
 
+    private static void alternativeEventDetectionModule(JavaDStream<String> wordsTweets, int batchInterval, int eta, boolean writeToFile,
+                                                        JavaStreamingContext jssc, String pathToNullModelsFolder,
+                                                        HashSet<String> stopWords) {
+
+        if(!pathToNullModelsFolder.endsWith("/")) pathToNullModelsFolder += "/";
+
+        ArrayList <JavaDStream<String>> pastDaysStreams = new ArrayList<>();
+
+        // Read files with tweet historic from past days:
+        File folder = new File(pathToNullModelsFolder);
+        String[] subFoldersNames = folder.list();
+        assert subFoldersNames != null;
+        for(String subFolderName : subFoldersNames) {
+            File subFolder = new File(pathToNullModelsFolder + subFolderName);
+            if(!subFolder.isDirectory()) continue;
+            // we are in folder subFolderName/, and we want to generate a stream from an inner file with same name
+            JavaDStream<String> folderTweets = Utils.generateStreamFromFile(jssc,
+                    pathToNullModelsFolder + subFolderName + "/" + subFolderName,
+                    batchInterval);
+            pastDaysStreams.add(folderTweets);
+        }
+        final int nFiles = pastDaysStreams.size();
+        System.out.println(nFiles + " files being used as past data");
+
+        // preprocess these data:
+//        ArrayList <JavaDStream<String>> pastDaysStreamsCleaned = new ArrayList<>();
+//        pastDaysStreams.forEach(stream ->
+//                pastDaysStreamsCleaned.add(Utils.preprocessing(stream, stopWords)));
+        pastDaysStreams.replaceAll(stream -> Utils.preprocessing(stream, stopWords));
+
+        // create average count of words from these data:
+        ArrayList<JavaPairDStream<String, Integer>> pastDaysCounts = new ArrayList<>();
+        pastDaysStreams.forEach(stream ->
+                pastDaysCounts.add(stream.mapToPair(s -> new Tuple2<>(s, 1))));
+        // merge and compute avg
+        JavaPairDStream<String, Integer> combinedPastDaysCount = pastDaysCounts.get(0);
+        for(int i = 1; i < pastDaysCounts.size(); i++) {
+            combinedPastDaysCount = combinedPastDaysCount.union(pastDaysCounts.get(i));
+        }
+        JavaPairDStream <String, Double> avgCount = combinedPastDaysCount
+                .reduceByKey(Integer::sum)
+                .mapToPair(x -> new Tuple2<>(x._1, ((double) x._2)/nFiles));
+//        avgCount.print();
+
+        // count of batch being currently analyzed
+        JavaPairDStream <String, Integer> countCurrent = wordsTweets.mapToPair(s -> new Tuple2<>(s,1))
+                .reduceByKey(Integer::sum);
+
+        /////////////////////////////////////
+        // Apply event detection algorithm //
+        /////////////////////////////////////
+
+        // set parameter for the detection of anomalies with Poisson model
+        double alpha = 0.99;
+        JavaPairDStream<String, Tuple2<Integer,Double>> joined = countCurrent.join(avgCount);
+
+        // detect events
+        JavaPairDStream<String, Tuple3<Integer,Double,Double>> events;
+        if(eta < 0) {
+            // make eta proportional to |eta| and to 1 + avg count of the word in previous windows (|eta| * avg count)
+            events = joined.filter(t -> t._2._1 > Math.abs(eta) * Math.sqrt(t._2._2+10) + 100 + t._2._2)
+                    .mapToPair(t -> new Tuple2 <>(t._1, new Tuple3 <>(t._2._1, t._2._2, Math.sqrt(t._2._2+10) )));
+        }
+        else {
+            events = joined.filter(t -> t._2._1 > eta * Utils.CI(t._2._2, nFiles, alpha) + t._2._2)
+                    .mapToPair(t -> new Tuple2 <>(t._1, new Tuple3 <>(t._2._1, t._2._2,  Utils.CI(t._2._2, nFiles, alpha))));
+        }
+
+        if(writeToFile) {
+            DStream<String> eventWords = events.map(t -> t._1).dstream();
+            eventWords.saveAsTextFiles("target/our_outputs/event_detection",
+                    LocalDateTime.now().toString().replaceAll("[:.]","-"));
+        }
+        else {
+            events.print();
+        }
+
+
+    }
+
     public static void detectLiveEvents() {
 
         Logger.getLogger("org").setLevel(Level.ERROR);
@@ -128,7 +214,8 @@ public class Task4 {
 
     }
 
-    public static void detectEventsFromFile(String fileName, String stopWordsFileName, boolean writeToFiles) {
+    public static void detectEventsFromFile(String fileName, String stopWordsFileName, boolean writeToFiles,
+                                            String eventDetectionModuleName, String pathToPastDaysData) {
 
         Logger.getLogger("org").setLevel(Level.ERROR);
         Logger.getLogger("akka").setLevel(Level.ERROR);
@@ -152,29 +239,13 @@ public class Task4 {
         assert txtTweets != null;
         // txtTweets.print();
 
-        // identifies numbers (to be applied ** after ** split into different words)
-        Pattern pattern = Pattern.compile("-?\\d+(\\.\\d+)?");
-        // regex for unicode characters
-        String unicodeCharsRegex = "\\\\u\\w\\w\\w\\w";
-        // regex to map URLs adapted from https://stackoverflow.com/a/3809435 but taking into account that Twitter texts
-        // already scape slashes like "\/" (so we want to map both / and (\/) as /:
-        String urlRegex = "(http(s)?:(//|\\\\/\\\\/).)?(www\\.)?[-a-zA-Z0-9@:%._+~#=]{2,256}\\.[a-z]{2,6}\\b([-a-zA-Z0-9@:%_+.~#?&/\\\\=]*)";
-        // there is also a very specific and common url in the tweets data files that is not catch by the prev regex
-        String commonUrlRegex = "(https:\\\\/\\\\/t\\.co\\\\/[-a-zA-Z0-9@:%._+~#=]{1,256})";
-        // Finally, split into words and application of filters:
-        JavaDStream<String> wordsTweets = txtTweets
-                .flatMap(s -> Arrays.stream(s
-                        .toLowerCase(Locale.ROOT)
-                        .replaceAll(urlRegex + "|" + commonUrlRegex, "")
-                        .replaceAll(unicodeCharsRegex, "")
-                        .replaceAll("https|co|rt","") // despite our efforts, there are always these 3 words
-                        .split("[\\s\\n,;.:?!'’\"{}\\[\\]()/\\\\]"))
-                        .filter(w -> !w.equals("")) // remove empty strings
-                        .filter(w -> !stopWords.contains(w)) // removes stop words
-                        .iterator()) // split and flat
-                .filter(s -> !pattern.matcher(s).matches()); // remove number-format words
+        JavaDStream<String> wordsTweets = Utils.preprocessing(txtTweets, stopWords);
 
-        eventDetectionModule(wordsTweets, 2, realDurationInSeconds, 30, writeToFiles);
+        if(eventDetectionModuleName.equals("eventDetectionModule"))
+            eventDetectionModule(wordsTweets, 2, realDurationInSeconds, 30, writeToFiles);
+        else if(eventDetectionModuleName.equals("alternativeEventDetectionModule"))
+            alternativeEventDetectionModule(wordsTweets, realDurationInSeconds, -1, writeToFiles,
+                    jssc, pathToPastDaysData, stopWords);
 
         jssc.start();
         try {
@@ -192,9 +263,14 @@ public class Task4 {
         // live:
         // detectLiveEvents();
 
-        // from file:
-        detectEventsFromFile("data/French/2020-02-02/2020-02-02",
-                "data/French/stop_words.txt", false);
+        // from file (basic detection module, which uses previous intervals in a window to help detecting events):
+        //detectEventsFromFile("data/French/2020-02-02/2020-02-02", "data/French/stop_words.txt",
+        //        false, "eventDetectionModule", null);
+
+        // from file (alternative detection module, which uses previous files with past data to help detecting events):
+        // We are testing with last day from our dataset, using the previous 6 as "past data"
+        detectEventsFromFile("data/French/2020-02-07/2020-02-07", "data/French/stop_words.txt",
+                false, "alternativeEventDetectionModule", "data/FrenchWithoutLastDay");
     }
 
 }
