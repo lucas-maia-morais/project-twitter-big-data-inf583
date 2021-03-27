@@ -20,3 +20,6 @@ target/
 
 # huge folder with sample data
 data/
+
+# Twitter dev account credentials
+src/main/resources/credentials.txt
