@@ -68,12 +68,12 @@ public class Task4 {
         JavaPairDStream<String, Tuple3<Integer,Double,Double>> events;
         if(eta < 0) {
             // make eta proportional to |eta| and to 1 + avg count of the word in previous windows (|eta| * avg count)
-            events = joined.filter(t -> t._2._1 > Math.abs(eta) * Math.sqrt(t._2._2+10) + 100 + t._2._2)
-                    .mapToPair(t -> new Tuple2 <>(t._1, new Tuple3 <>(t._2._1, t._2._2, Math.sqrt(t._2._2+10) )));
+            events = joined.filter(t -> t._2._1 > Math.abs(eta) * Math.sqrt(t._2._2+10) + 20 + t._2._2)
+                    .mapToPair(t -> new Tuple2 <>(t._1, new Tuple3 <>(t._2._1, t._2._2, Math.abs(eta) * Math.sqrt(t._2._2+10) + 20 )));
         }
         else {
             events = joined.filter(t -> t._2._1 > eta * Utils.CI(t._2._2, n - 1, alpha) + t._2._2)
-                    .mapToPair(t -> new Tuple2 <>(t._1, new Tuple3 <>(t._2._1, t._2._2,  Utils.CI(t._2._2, n - 1, alpha)))); // TODO
+                    .mapToPair(t -> new Tuple2 <>(t._1, new Tuple3 <>(t._2._1, t._2._2,  eta * Utils.CI(t._2._2, n - 1, alpha))));
         }
 
         if(writeToFile) {
@@ -148,12 +148,12 @@ public class Task4 {
         JavaPairDStream<String, Tuple3<Integer,Double,Double>> events;
         if(eta < 0) {
             // make eta proportional to |eta| and to 1 + avg count of the word in previous windows (|eta| * avg count)
-            events = joined.filter(t -> t._2._1 > Math.abs(eta) * Math.sqrt(t._2._2+10) + 100 + t._2._2)
-                    .mapToPair(t -> new Tuple2 <>(t._1, new Tuple3 <>(t._2._1, t._2._2, Math.sqrt(t._2._2+10) )));
+            events = joined.filter(t -> t._2._1 > Math.abs(eta) * Math.sqrt(t._2._2+10) + 20 + t._2._2)
+                    .mapToPair(t -> new Tuple2 <>(t._1, new Tuple3 <>(t._2._1, t._2._2, Math.abs(eta) * Math.sqrt(t._2._2+10) + 20 )));
         }
         else {
             events = joined.filter(t -> t._2._1 > eta * Utils.CI(t._2._2, nFiles, alpha) + t._2._2)
-                    .mapToPair(t -> new Tuple2 <>(t._1, new Tuple3 <>(t._2._1, t._2._2,  Utils.CI(t._2._2, nFiles, alpha))));
+                    .mapToPair(t -> new Tuple2 <>(t._1, new Tuple3 <>(t._2._1, t._2._2,  eta * Utils.CI(t._2._2, nFiles, alpha))));
         }
 
         if(writeToFile) {
@@ -242,9 +242,9 @@ public class Task4 {
         JavaDStream<String> wordsTweets = Utils.preprocessing(txtTweets, stopWords);
 
         if(eventDetectionModuleName.equals("eventDetectionModule"))
-            eventDetectionModule(wordsTweets, 2, realDurationInSeconds, 30, writeToFiles);
+            eventDetectionModule(wordsTweets, 2, realDurationInSeconds, 3, writeToFiles);
         else if(eventDetectionModuleName.equals("alternativeEventDetectionModule"))
-            alternativeEventDetectionModule(wordsTweets, realDurationInSeconds, -1, writeToFiles,
+            alternativeEventDetectionModule(wordsTweets, realDurationInSeconds, 5, writeToFiles,
                     jssc, pathToPastDaysData, stopWords);
 
         jssc.start();
@@ -264,13 +264,13 @@ public class Task4 {
         // detectLiveEvents();
 
         // from file (basic detection module, which uses previous intervals in a window to help detecting events):
-        //detectEventsFromFile("data/French/2020-02-02/2020-02-02", "data/French/stop_words.txt",
-        //        false, "eventDetectionModule", null);
+        detectEventsFromFile("data/French/2020-02-02/2020-02-02", "data/French/stop_words.txt",
+                false, "eventDetectionModule", null);
 
         // from file (alternative detection module, which uses previous files with past data to help detecting events):
         // We are testing with last day from our dataset, using the previous 6 as "past data"
-        detectEventsFromFile("data/French/2020-02-07/2020-02-07", "data/French/stop_words.txt",
-                false, "alternativeEventDetectionModule", "data/FrenchWithoutLastDay");
+//        detectEventsFromFile("data/French/2020-02-07/2020-02-07", "data/French/stop_words.txt",
+//                false, "alternativeEventDetectionModule", "data/FrenchWithoutLastDay");
     }
 
 }
