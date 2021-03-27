@@ -12,4 +12,20 @@ iii. your access token
 
 iv. you access token secret
 
-:)
+You may also want to create a folder data in the parent folder (i.e. data should be a "sibling" of src) where you can drop your Twitter samples in the following structure (or your own if it works well):
+
+
+```
+|___src, pom, target, etc...
+|___data
+    |___French
+    |   |___folder1
+    |   |   |___file1
+    |   |___folder2
+    |   |   |___file2    
+    |   |...
+    |   |___stop_words_for_french.txt
+    |___English
+    |   |...
+    |...
+```
