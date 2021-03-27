@@ -12,7 +12,7 @@ iii. your access token
 
 iv. you access token secret
 
-You may also want to create a folder data in the parent folder (i.e. data should be a "sibling" of src) where you can drop your Twitter samples in the following structure (or your own if it works well):
+You may also want to create a folder data in the parent folder or wherever you want where you can drop your Twitter samples in the following structure (or your own if it works well):
 
 
 ```

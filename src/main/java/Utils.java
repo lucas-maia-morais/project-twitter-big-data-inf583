@@ -44,14 +44,16 @@ public class Utils {
      */
     public static double CI(double poissonMean, int nSamples, double alpha) {
 
-        // estimate the confidence interval for nSamples * mean using nSamples * sample mean
+        // estimate the confidence interval for nSamples * mean using nSamples * 'sample mean'
         // (as in https://en.wikipedia.org/wiki/Poisson_distribution#Confidence_interval)
         double k = Math.max(nSamples * poissonMean, 1); // PS. ChiSquared does not accept param zero
-        ChiSquaredDistribution lowerChiSquared = new ChiSquaredDistribution(2 * k);
-        ChiSquaredDistribution upperChiSquared = new ChiSquaredDistribution(2 * k + 2);
+        ChiSquaredDistribution lowerChiSquared = new ChiSquaredDistribution(2 * k * nSamples);
+        ChiSquaredDistribution upperChiSquared = new ChiSquaredDistribution(2 * k * nSamples + 2);
 
-        return upperChiSquared.inverseCumulativeProbability(1-alpha/2) / 2
-                - lowerChiSquared.inverseCumulativeProbability(alpha/2) / 2;
+        alpha = 1 - alpha; // different notations between formula and code that calls this method
+
+        return upperChiSquared.inverseCumulativeProbability(1-alpha/2) / (2 * nSamples)
+                - lowerChiSquared.inverseCumulativeProbability(alpha/2) / (2 * nSamples);
 
     }
 
