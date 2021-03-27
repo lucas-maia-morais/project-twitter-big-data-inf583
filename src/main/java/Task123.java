@@ -10,7 +10,7 @@ import java.util.List;
 
 import static org.apache.spark.sql.functions.*;
 
-public class Task1_2 {
+public class Task123 {
 
     static public SparkSession spark;
 
@@ -39,8 +39,8 @@ public class Task1_2 {
                                                    .orderBy(col("count").desc())
                                                    .select(col("words_separated"), col("count"));
 
-        Long total = countsWithoutStopWords.select(sum(col("count"))).first().getLong(0);
-        countsWithoutStopWords = countsWithoutStopWords.withColumn("count", round(col("count").divide(total).multiply(100),2));
+        Long total = texts.count();
+        countsWithoutStopWords = countsWithoutStopWords.withColumn("count", round(col("count").divide(total),4));
 
         //counts.show(false);
         //countsWithoutStopWords.show(false);
@@ -52,7 +52,7 @@ public class Task1_2 {
         Pair <Dataset<Row>, Dataset<Row>> count_words;
         Dataset<Row> words_historic;
         List<String> time_period = Arrays.asList( "night", "morning", "afternoon", "evening");
-        List<String> time_hour = Arrays.asList("00:00:00", "06:00:00", "12:00:00", "18:00:00", "24:00:00");
+        List<String> time_hour = Arrays.asList("00:00:00", "06:00:00", "12:00:00", "18:00:00", "23:59:59");
 
         count_words = countWords(day + " " + time_hour.get(0), day + " "+time_hour.get(1),
                 "data/French/"+day, "data/French/stop_words.txt", 100);
@@ -99,16 +99,23 @@ public class Task1_2 {
 
     public static void identify_season_words(Dataset<Row> deviation, double threshold){
         String[] columns = deviation.columns();
-        Dataset<Row> words_gt = deviation.filter(col(columns[1]).gt(threshold));
-        for (int i = 2; i< columns.length; i++){
-            words_gt = words_gt.union(deviation.filter(col(columns[i]).gt(threshold)));
-        }
+        Dataset<Row> words_gt = deviation.filter(col(columns[1]).gt(threshold)
+                                                 .or(col(columns[2]).gt(threshold))
+                                                 .or(col(columns[3]).gt(threshold))
+                                                 .or(col(columns[4]).gt(threshold)));
 
-        words_gt.show(200);
+        //words_gt = words_gt.union(deviation.filter(col(columns[i]).gt(threshold)));
+        words_gt.repartition(1).rdd().saveAsTextFile("season_words_scores");
+        words_gt.select("words").distinct().repartition(1).write().format("text").save("season_words_list");
+        //words_gt.show(200);
     }
     public static void main(String[] args) throws AnalysisException {
         spark = SparkSession.builder().appName("Java Spark  SQL for Twitter")
                 .config("spark.master", "local[*]")
+                .config("spark.sql.codegen.wholeStage", "false")
+                .config("spark.sql.broadcastTimeout", "3000")
+                .config("spark.driver.memory", "8G")
+                .config("spark.sql.autoBroadcastJoinThreshold", "-1")
                 .getOrCreate();
         Logger.getLogger("org").setLevel(Level.ERROR);
         Logger.getLogger("akka").setLevel(Level.ERROR);
@@ -121,17 +128,16 @@ public class Task1_2 {
         Dataset<Row> historic = spark.emptyDataFrame();
         Dataset<Row> deviation = spark.emptyDataFrame();
 
-        for (int day = 1; day<7; day++) {
+        for (int day = 1; day<8; day++) {
             historic = get_word_historic_in_a_day("2020-02-0"+ String.valueOf(day));
             deviation = get_deviation(historic, time_period);
+
             String[] columns = deviation.columns();
             if(day == 1)
                 mean_of_deviations = deviation.withColumnRenamed("words", "final_words");
             else {
-                mean_of_deviations = mean_of_deviations.join(deviation, mean_of_deviations.col("final_words").equalTo(deviation.col("words")))
-                                                       .withColumn("new_words", when(col("final_words").equalTo(col("words")), col("final_words")).otherwise(when(col("final_words").equalTo(null), col("words")).otherwise(col("final_words"))))
-                                                       .drop("words", "final_words")
-                                                       .withColumnRenamed("new_words", "final_words");
+                mean_of_deviations = mean_of_deviations.join(deviation, mean_of_deviations.col("final_words").equalTo(deviation.col("words")), "inner")
+                                                       .drop("words");
             }
             for (int col=1; col< columns.length; col++) {
                 if (day == 1)
@@ -139,17 +145,25 @@ public class Task1_2 {
                 mean_of_deviations = mean_of_deviations.withColumn("mean-" + columns[col], col(columns[col]).plus(col("mean-" + columns[col])))
                                                        .drop(columns[col]);
             }
-            mean_of_deviations.show(5);
+            System.out.println("Day "+ String.valueOf(day));
+            //mean_of_deviations.show(5);
         }
+        // Get columns in the right order
+        //System.out.println("Finished for:");
+        //mean_of_deviations.show(200);
+        mean_of_deviations = mean_of_deviations.select("final_words", "mean-deviation-morning", "mean-deviation-afternoon", "mean-deviation-evening", "mean-deviation-night")
+                .withColumnRenamed("final_words", "words");
+        // Take the mean
         String [] mean_columns = mean_of_deviations.columns();
-        for (int col=0; col<mean_columns.length-1; col++){
+        for (int col=1; col<mean_columns.length; col++){
             mean_of_deviations = mean_of_deviations.withColumn(mean_columns[col], col(mean_columns[col]).divide(lit(7)));
         }
         //deviation_one.show(200);
-        mean_of_deviations = mean_of_deviations.select("final_words", "mean-deviation-morning", "mean-deviation-afternoon", "mean-deviation-evening", "mean-deviation-night")
-                                               .withColumnRenamed("final_words", "words");
 
-        identify_season_words(mean_of_deviations, 70);
+        System.out.println("Finished select");
+        //mean_of_deviations.show(200);
+
+        identify_season_words(mean_of_deviations, 20);
 
     }
 

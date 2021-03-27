@@ -4,6 +4,10 @@ import static org.apache.spark.sql.functions.from_unixtime;
 import static org.apache.spark.sql.functions.lower;
 import static org.apache.spark.sql.functions.split;
 import static org.apache.spark.sql.functions.unix_timestamp;
+
+import java.util.ArrayList;
+import java.util.List;
+
 import org.apache.log4j.Logger;
 import org.apache.log4j.Level;
 
@@ -26,6 +30,10 @@ import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SQLContext;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.types.DataTypes;
+
+import scala.collection.JavaConversions;
+import scala.collection.mutable.WrappedArray;
+
 import org.apache.spark.ml.feature.Tokenizer;
 import org.apache.spark.ml.feature.RegexTokenizer;
 import org.apache.spark.ml.feature.StopWordsRemover;
@@ -73,6 +81,14 @@ public class Task9LDA {
         // read file with sample tweets
         Dataset <Row> tweets = spark.read().json(fileName);
         Dataset <Row> stopwords = spark.read().json(fileStopWords);
+        List<String> listStopWords = stopwords.as(Encoders.STRING()).collectAsList();
+        String[] arrayStopWords = listStopWords.toArray(new String[0]);
+        //List<Row> stopwordsList = stopwords.collectAsList();
+        //String[] stopWordsArray = new String[stopwordsList.size()];
+        //for (int i = 0, in)
+        //WrappedArray<Integer> s = (WrappedArray<Integer>) value.get(value.fieldIndex("termIndices"));
+        //List<Integer> intList = new ArrayList<Integer>();
+	    //intList.addAll(JavaConversions.seqAsJavaList(s));
         tweets.show(false);
 
 
@@ -106,7 +122,7 @@ public class Task9LDA {
         StopWordsRemover remover = new StopWordsRemover()
         		.setInputCol("words")
         		.setOutputCol("wordsNotFiltered")
-        		.setStopWords(StopWordsRemover.loadDefaultStopWords("french"));
+        		.setStopWords(arrayStopWords);
         
         Dataset<Row> tokenizedFiltered = remover.transform(tokenized);
         tokenizedFiltered.show(false);
@@ -140,7 +156,7 @@ public class Task9LDA {
     	LDA lda = new LDA()
     			.setOptimizer("online")
     			.setK(numTopics)
-    			.setMaxIter(5);
+    			.setMaxIter(maxIterations);
     			//.setDocConcentration(-1)
     			//.setTopicConcentration(-1);
     	
@@ -168,18 +184,23 @@ public class Task9LDA {
    		
    		
    		Dataset<Row> topicIndices = model.describeTopics(10);
+   		topicIndices.show(true);
    		//topics = topicIndices.map(col(), null);
    		//topicIndices.withColumn("topicWords", topicWords(topicIndices.("termIndices")));
    		Encoder<String> encoder = Encoders.STRING();
    		Dataset<String> wordsTopic = topicIndices.map(new MapFunction<Row,String>(){
    			@Override
    			public String call(Row value) throws Exception {
-   				Integer[] s = (Integer[]) value.get(value.fieldIndex("termIndices"));
-   		    	String topicWords = new String();
+   				System.out.println(value.fieldIndex("termIndices"));
+   				System.out.println(value.get(value.fieldIndex("termIndices")));
+   				WrappedArray<Integer> s = (WrappedArray<Integer>) value.get(value.fieldIndex("termIndices"));
+   				List<Integer> intList = new ArrayList<Integer>();
+   		        intList.addAll(JavaConversions.seqAsJavaList(s));
+   				String topicWords = new String();
    		    	int i=0;
-   		    	for (int wordIdx : s) {
+   		    	for (int wordIdx : intList) {
    		    		topicWords += vocabArray[wordIdx];
-   		    		if (i < s.length-1) {
+   		    		if (i < intList.size()-1) {
    		    			topicWords += ",";
    		    		}
    		    		i++;
@@ -207,8 +228,8 @@ public class Task9LDA {
 //        sqlContext.setConf("spark.sql.broadcastTimeout",  "36000");
         sqlContext.setConf("spark.executor.memory",  "6g");
         
-        Dataset<Row> datapreprocessed = preprocess("2020-02-01 00:00:00", "2020-02-01 00:05:00",
-                "data/French/2020-02-01", "data/French/stop_words_french.txt");
+        Dataset<Row> datapreprocessed = preprocess("2020-02-02 11:00:00", "2020-02-02 11:00:30",
+                "data/English/NoFilterEnglish2020-02-02", "data/English/stop_words_english.txt");
         LDACluster(datapreprocessed);
 	}
 
